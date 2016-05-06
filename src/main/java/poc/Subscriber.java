@@ -6,17 +6,23 @@ import org.slf4j.LoggerFactory;
 
 import redis.clients.jedis.JedisPubSub;
 
+import java.util.Properties;
+
 @Slf4j
 public class Subscriber extends JedisPubSub {
 
-	private long delay;
+	public static final String DELAY_PROPERTY = "subscriber.delay";
+
+	private Properties props;
 	
-	public Subscriber(long delay) {
-		this.delay = delay;
+	public Subscriber(Properties props) {
+		this.props = props;
 	}
 
 	@Override
 	public void onMessage(String channel, String message) {
+
+		long delay = Long.parseLong(props.getProperty(DELAY_PROPERTY));
 		try {
 			Thread.sleep(delay);
 			log.info("Message received. Channel: {}, Msg: {}", channel, message);

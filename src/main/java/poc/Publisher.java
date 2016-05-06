@@ -5,14 +5,19 @@ import org.slf4j.LoggerFactory;
 
 import redis.clients.jedis.Jedis;
 
+import java.util.Properties;
+
 public class Publisher {
 
 	private static final Logger logger = LoggerFactory.getLogger(Publisher.class);
 	
 	private final Jedis publisherJedis;
 
-    public Publisher(Jedis publisherJedis) {
+	private Properties props;
+
+    public Publisher(Jedis publisherJedis, Properties props) {
         this.publisherJedis = publisherJedis;
+		this.props = props;
     }
     
     public void publishMessage(String message, String channel) {

@@ -1,30 +1,36 @@
 package poc;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.Getter;
 
+import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.Jedis;
 
 import java.util.Properties;
 
+@Slf4j
 public class Publisher {
 
-	private static final Logger logger = LoggerFactory.getLogger(Publisher.class);
+	public static final String NUMBER_OF_MESSAGES = "publisher.numberOfMessages";
+	public static final String MESSAGES_PER_SECOND = "publisher.messagesPerSecond";
 	
 	private final Jedis publisherJedis;
 
-	private Properties props;
+	@Getter
+	private int messagesPerSecond;
+
+	@Getter
+	private int numberOfMessages;
 
     public Publisher(Jedis publisherJedis, Properties props) {
         this.publisherJedis = publisherJedis;
-		this.props = props;
+		this.messagesPerSecond = Integer.parseInt(props.getProperty(MESSAGES_PER_SECOND));
+		this.numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
     }
     
     public void publishMessage(String message, String channel) {
     	long startTime = System.currentTimeMillis();
     	publisherJedis.publish(channel, message);
-    	
     	long duration = System.currentTimeMillis() - startTime;
-    	logger.info("Message: " + message + " published successfully in " + duration + " ms on channel " + channel);
+    	log.info("Message: " + message + " published successfully in " + duration + " ms on channel " + channel);
     }
 }

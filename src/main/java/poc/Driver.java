@@ -8,17 +8,22 @@ import redis.clients.jedis.JedisPoolConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 public class Driver {
 
-
-	private static String ADDRESS = "<redisAddr>";
-	private static String REDIS_KEY = "<addKeyHere>";
+	private static final String ADDRESS = "<redisAddr>";
+	private static final String REDIS_KEY = "<addKeyHere>";
+	private static final String NUMBER_OF_CHANNELS = "driver.numberOfChannels";
+	private static final String NUMBER_OF_SUBSCRIBERS = "driver.numberOfSubscribers";
+	private static final String NUMBER_OF_PUBLISHERS = "driver.numberOfPublishers";
 
 	private static Properties props;
 	public static void main(String[] args) throws IOException {
@@ -30,20 +35,7 @@ public class Driver {
 
 		props = loadProperties(pathToCfg);
 
-		String msgPerSec = System.getProperty("msgPerSec", "5");
-		int messagesPerSecond = Integer.parseInt(msgPerSec);
-
-		String delayTime = System.getProperty("delay", "100");
-		long delay = Long.parseLong(delayTime);
-
-		String channelRange = System.getProperty("channelRange", "1-500");
-		int minChannel = Integer.parseInt(channelRange.split("-")[0]);
-		int maxChannel = Integer.parseInt(channelRange.split("-")[1]);
-
-		if (minChannel >= maxChannel) {
-			System.out.println("MaxChannel should be greater than MinChannel");
-			return;
-		}
+		int numberOfChannels = Integer.parseInt(props.getProperty(NUMBER_OF_CHANNELS));
 
 		JedisPoolConfig poolConfig = new JedisPoolConfig();
 		poolConfig.setMaxTotal(5000);
@@ -55,43 +47,52 @@ public class Driver {
 		System.out.println("Type: " + type);
 		System.out.println("-------------------------");
 		if (type.equalsIgnoreCase(AppType.SUBSCRIBER.name())) {
-			sub(jedisPool, minChannel, maxChannel, delay);
+			sub(jedisPool, numberOfChannels);
 		} else if (type.equalsIgnoreCase(AppType.PUBLISHER.name())) {
-			pub(jedisPool, minChannel, maxChannel, messagesPerSecond);
+			pub(jedisPool, numberOfChannels);
 		}
 	}
 
 	private static Properties loadProperties(String pathToCfg) throws IOException {
-		InputStream is = Driver.class.getResourceAsStream(pathToCfg);
+		InputStream is = Driver.class.getClassLoader().getResourceAsStream(pathToCfg);
 		Properties props = new Properties();
 		props.load(is);
 		return props;
 	}
 
-	public static void sub(final JedisPool jedisPool, final int minChannel, final int maxChannel, long delay) {
-		Subscriber subscriber = new Subscriber(props);
+	public static void sub(final JedisPool jedisPool, int numberOfChannels) {
+		final Subscriber subscriber = new Subscriber("Subscriber", props);
 		Jedis subscriberJedis = jedisPool.getResource();
 		ArrayList<String> channels = new ArrayList<String>();
-		for (Integer channel = minChannel; channel <= maxChannel; channel++) {
+		for (Integer channel = 1; channel <= numberOfChannels; channel++) {
 			channels.add(channel.toString());
 		}
 		log.info("Subscribing to " + channels.size() + " channels");
 		subscriberJedis.subscribe(subscriber, channels.toArray(new String[channels.size()]));
-	}
 
-	public static void pub(final JedisPool jedisPool, final int minChannel, final int maxChannel, final int messagesPerSecond) {
-		final List<String> messages = MessageGenerator.generateMessages(messagesPerSecond);
-		final Publisher publisher = new Publisher(jedisPool.getResource(), props);
 		Timer timer = new Timer();
 		timer.scheduleAtFixedRate(new TimerTask() {
 			public void run() {
-				for (Integer channel = minChannel; channel < maxChannel; channel++) {
-					String CHANNEL_NAME = channel.toString();
-					for (String message : messages) {
+				System.out.println(subscriber.getName() + " received " + subscriber.getMessagesReceived().get() + " messages");
+			}
+		}, 0, 5000);
+	}
+
+	public static void pub(final JedisPool jedisPool, final int numberOfChannels) {
+		final Publisher publisher = new Publisher(jedisPool.getResource(), props);
+		final List<String> messages = MessageGenerator.generateMessages(publisher.getNumberOfMessages());
+
+		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(numberOfChannels * 2);
+		for (Integer channel = 1; channel < numberOfChannels; channel++) {
+			final String CHANNEL_NAME = channel.toString();
+			final List<String> messagesCpy = new ArrayList<String>(messages);
+			newFixedThreadPool.submit(new Runnable() {
+				public void run() {
+					for (String message : messagesCpy) {
 						publisher.publishMessage(message, CHANNEL_NAME);
 					}
 				}
-			}
-		}, 1000, 1000);
+			});
+		}
 	}
 }

@@ -14,11 +14,6 @@ public class Subscriber extends JedisPubSub {
 	public static final String DELAY_PROPERTY = "subscriber.delay";
 
 	private Properties props;
-	
-	public Subscriber(String name, Properties props) {
-		this.name = name;
-		this.props = props;
-	}
 
 	@Getter
 	private String name;
@@ -26,13 +21,18 @@ public class Subscriber extends JedisPubSub {
 	@Getter
 	AtomicLong messagesReceived = new AtomicLong();
 
+	public Subscriber(String name, Properties props) {
+		this.name = name;
+		this.props = props;
+	}
+
 	@Override
 	public void onMessage(String channel, String message) {
 
 		long delay = Long.parseLong(props.getProperty(DELAY_PROPERTY));
 		try {
 			Thread.sleep(delay);
-			log.info("Message received. Channel: {}, Msg: {}", channel, message);
+			//log.info("Message received. Channel: {}, Msg: {}", channel, message);
 			messagesReceived.incrementAndGet();
 		} catch (InterruptedException e) {
 			log.error("InterruptedException " + e);

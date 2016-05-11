@@ -1,6 +1,7 @@
 package poc;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import redis.clients.jedis.JedisPubSub;
@@ -19,6 +20,7 @@ public class Subscriber extends JedisPubSub {
 	private String name;
 
 	@Getter
+	@Setter
 	AtomicLong messagesReceived = new AtomicLong();
 
 	public Subscriber(String name, Properties props) {

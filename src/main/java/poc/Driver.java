@@ -28,11 +28,10 @@ public class Driver {
 	private static final String NUMBER_OF_MESSAGES = "driver.numberOfMessages";
 	private static final String NUMBER_OF_SUBSCRIBERS = "driver.numberOfSubscribers";
 	private static final String NUMBER_OF_PUBLISHERS = "driver.numberOfPublishers";
+	private static final String MAX_NUMBER_OF_PUBLISHER_THREADS = "diver.numberOfPublisherThreads";
+	private static final String MAX_NUMBER_OF_SUBSCRIBER_THREADS = "driver.numberOfSubscriberThreads";
 
 	static DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-
-	private static final int MAX_NUMBER_OF_PUBLISHER_THREADS = 50;
-	private static final int MAX_NUMBER_OF_SUBSCRIBER_THREADS = 50;
 
 	private static Properties props;
 	public static void main(String[] args) throws IOException {
@@ -48,6 +47,8 @@ public class Driver {
 		final int numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
 		int numberOfSubscribers = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBERS));
 		int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
+		final int maxNumberOfPublisherThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_PUBLISHER_THREADS));
+		final int maxNumberOfSubscriberThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_SUBSCRIBER_THREADS));
 
 		JedisPoolConfig poolConfig = new JedisPoolConfig();
 		poolConfig.setMaxTotal(Integer.MAX_VALUE);
@@ -64,7 +65,7 @@ public class Driver {
 				final String subscriberName = "Subscriber" + i;
 				newFixedThreadPool.submit(new Runnable() {
 					public void run() {
-						sub(subscriberName, jedisPool, numberOfChannels);
+						sub(subscriberName, jedisPool, numberOfChannels, maxNumberOfSubscriberThreads);
 					}
 				});
 			}
@@ -74,7 +75,7 @@ public class Driver {
 				final String publisherName = "Publisher" + i;
 				newFixedThreadPool.submit(new Runnable() {
 					public void run() {
-						pub(publisherName, jedisPool, numberOfChannels, numberOfMessages);
+						pub(publisherName, jedisPool, numberOfChannels, numberOfMessages, maxNumberOfPublisherThreads);
 					}
 				});
 			}
@@ -88,7 +89,7 @@ public class Driver {
 		return props;
 	}
 
-	public static void sub(final String subscriberName, final JedisPool jedisPool, int numberOfChannels) {
+	public static void sub(final String subscriberName, final JedisPool jedisPool, int numberOfChannels, int maxNumberOfSubscriberThreads) {
 		final AtomicLong messagesReceived = new AtomicLong();
 		final ArrayList<String> channels = new ArrayList<String>();
 		for (Integer channel = 1; channel <= numberOfChannels; channel++) {
@@ -103,14 +104,14 @@ public class Driver {
 			}
 		}, 0, 1000);
 
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(MAX_NUMBER_OF_SUBSCRIBER_THREADS + 1);
+		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfSubscriberThreads + 1);
 		int maxChannel = 0;
 		int minChannel = 0;
-		if (numberOfChannels > MAX_NUMBER_OF_SUBSCRIBER_THREADS) {
-			for (int threadCount = 1; threadCount <= MAX_NUMBER_OF_SUBSCRIBER_THREADS; threadCount++) {
+		if (numberOfChannels > maxNumberOfSubscriberThreads) {
+			for (int threadCount = 1; threadCount <= maxNumberOfSubscriberThreads; threadCount++) {
 				Subscriber subscriber = new Subscriber(subscriberName, props);
 				Jedis subscriberJedis = jedisPool.getResource();
-				maxChannel = maxChannel + (numberOfChannels / MAX_NUMBER_OF_SUBSCRIBER_THREADS);
+				maxChannel = maxChannel + (numberOfChannels / maxNumberOfSubscriberThreads);
 				List<String> channelsToSubscribe = channels.subList(minChannel, maxChannel);
 				Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, messagesReceived, channelsToSubscribe);
 				minChannel = maxChannel;
@@ -118,7 +119,7 @@ public class Driver {
 			}
 		}
 
-		if (numberOfChannels % MAX_NUMBER_OF_SUBSCRIBER_THREADS != 0) {
+		if (numberOfChannels % maxNumberOfSubscriberThreads != 0) {
 			Subscriber subscriber = new Subscriber(subscriberName, props);
 			Jedis subscriberJedis = jedisPool.getResource();
 			List<String> channelsToSubscribe = channels.subList(minChannel, channels.size());
@@ -127,7 +128,7 @@ public class Driver {
 		}
 	}
 
-	public static void pub(final String publisherName, JedisPool jedisPool, int numberOfChannels, int numberOfMessages) {
+	public static void pub(final String publisherName, JedisPool jedisPool, int numberOfChannels, int numberOfMessages, int maxNumberOfPublisherThreads) {
 		final List<String> messages = MessageGenerator.generateMessages(numberOfMessages);
 		final AtomicLong messagesSent = new AtomicLong();
 
@@ -139,12 +140,12 @@ public class Driver {
 			}
 		}, 0, 1000);
 
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(MAX_NUMBER_OF_PUBLISHER_THREADS + 1);
+		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfPublisherThreads + 1);
 		int maxChannel = 1;
 		int minChannel = 1;
-		if (numberOfChannels > MAX_NUMBER_OF_PUBLISHER_THREADS) {
-			for (int threadCount = 1; threadCount <= MAX_NUMBER_OF_PUBLISHER_THREADS; threadCount++) {
-				maxChannel = maxChannel + (numberOfChannels / MAX_NUMBER_OF_PUBLISHER_THREADS);
+		if (numberOfChannels > maxNumberOfPublisherThreads) {
+			for (int threadCount = 1; threadCount <= maxNumberOfPublisherThreads; threadCount++) {
+				maxChannel = maxChannel + (numberOfChannels / maxNumberOfPublisherThreads);
 				Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
 				Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, maxChannel);
 				minChannel = maxChannel;
@@ -152,10 +153,26 @@ public class Driver {
 			}
 		}
 
-		if (numberOfChannels % MAX_NUMBER_OF_PUBLISHER_THREADS != 0) {
+		if (numberOfChannels % maxNumberOfPublisherThreads != 0) {
 			Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
 			Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, numberOfChannels + 1);
 			newFixedThreadPool.submit(runnable);
 		}
+
+
+		/*final Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
+		final List<String> messages = MessageGenerator.generateMessages(numberOfMessages);
+		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(numberOfChannels * 2);
+		for (Integer channel = 1; channel < numberOfChannels; channel++) {
+			final String CHANNEL_NAME = channel.toString();
+			final List<String> messagesCpy = new ArrayList<String>(messages);
+			newFixedThreadPool.submit(new Runnable() {
+				public void run() {
+					for (String message : messagesCpy) {
+						publisher.publishMessage(message, CHANNEL_NAME, messagesSent);
+					}
+				}
+			});
+		}*/
 	}
 }

@@ -1,8 +1,10 @@
-package poc;
+package poc.pub;
 
 import lombok.Getter;
 
 import lombok.extern.slf4j.Slf4j;
+import poc.blob.RedisBlobStore;
+import poc.pub.MessageGenerator;
 import redis.clients.jedis.Jedis;
 
 import java.util.Properties;
@@ -28,7 +30,8 @@ public class Publisher {
     }
     
     public void publishMessage(String message, String channel, AtomicLong messagesSent) {
-    	publisherJedis.publish(channel, message);
+        RedisBlobStore.put(message, MessageGenerator.message_2KB + message);
+        publisherJedis.publish(channel, message);
 		messagesSent.incrementAndGet();
     	//log.info("Message: " + message + " published successfully on channel " + channel);
     }

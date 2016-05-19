@@ -1,6 +1,12 @@
 package poc;
 
 import lombok.extern.slf4j.Slf4j;
+import poc.blob.RedisBlobStore;
+import poc.pub.MessageGenerator;
+import poc.pub.MessagePublisher;
+import poc.pub.Publisher;
+import poc.sub.ChannelSubscriber;
+import poc.sub.Subscriber;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -22,8 +28,8 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 public class Driver {
 
-	private static final String ADDRESS = "<redisAddr>";
-	private static final String REDIS_KEY = "<addKeyHere>";
+	private static final String ADDRESS = "p2cprototype.redis.cache.windows.net";
+	private static final String REDIS_KEY = "xDipkV9siK4JDaLo08C8zjKZLg2QvQeDxEeiN0SAFUw=";
 	private static final String NUMBER_OF_CHANNELS = "driver.numberOfChannels";
 	private static final String NUMBER_OF_MESSAGES = "driver.numberOfMessages";
 	private static final String NUMBER_OF_SUBSCRIBERS = "driver.numberOfSubscribers";
@@ -36,49 +42,57 @@ public class Driver {
 
 	private static Properties props;
 	public static void main(String[] args) throws IOException {
-		String type = System.getProperty("type", null);
-		String pathToCfg = System.getProperty("cfg", null);
-		if (type == null || pathToCfg == null) {
-			return;
-		}
 
-		props = loadProperties(pathToCfg);
+        try {
+            String type = System.getProperty("type", null);
+            String pathToCfg = System.getProperty("cfg", null);
+            if (type == null || pathToCfg == null) {
+                return;
+            }
 
-		final int numberOfChannels = Integer.parseInt(props.getProperty(NUMBER_OF_CHANNELS));
-		final int numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
-		int numberOfSubscribers = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBERS));
-		int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
+            props = loadProperties(pathToCfg);
 
-		JedisPoolConfig poolConfig = new JedisPoolConfig();
-		poolConfig.setMaxTotal(Integer.MAX_VALUE);
-		poolConfig.setTestOnBorrow(true);
+            final int numberOfChannels = Integer.parseInt(props.getProperty(NUMBER_OF_CHANNELS));
+            final int numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
+            int numberOfSubscribers = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBERS));
+            int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
 
-		final JedisPool jedisPool = new JedisPool(poolConfig, ADDRESS, 6379, 0, REDIS_KEY);
+            JedisPoolConfig poolConfig = new JedisPoolConfig();
+            poolConfig.setMaxTotal(Integer.MAX_VALUE);
+            poolConfig.setTestOnBorrow(true);
 
-		System.out.println("-------------------------");
-		System.out.println("Type: " + type);
-		System.out.println("-------------------------");
-		if (type.equalsIgnoreCase(AppType.SUBSCRIBER.name())) {
-			for (int i = 0; i < numberOfSubscribers; i++) {
-				ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
-				final String subscriberName = "Subscriber" + i;
-				newFixedThreadPool.submit(new Runnable() {
-					public void run() {
-						sub(subscriberName, jedisPool, numberOfChannels);
-					}
-				});
-			}
-		} else if (type.equalsIgnoreCase(AppType.PUBLISHER.name())) {
-			for (int i = 0; i < numberOfPublishers; i++) {
-				ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
-				final String publisherName = "Publisher" + i;
-				newFixedThreadPool.submit(new Runnable() {
-					public void run() {
-						pub(publisherName, jedisPool, numberOfChannels, numberOfMessages);
-					}
-				});
-			}
-		}
+            final JedisPool jedisPool = new JedisPool(poolConfig, ADDRESS, 6379, 0, REDIS_KEY);
+
+            RedisBlobStore.init(ADDRESS, REDIS_KEY);
+
+            System.out.println("-------------------------");
+            System.out.println("Type: " + type);
+            System.out.println("-------------------------");
+            if (type.equalsIgnoreCase(AppType.SUBSCRIBER.name())) {
+                for (int i = 0; i < numberOfSubscribers; i++) {
+                    ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
+                    final String subscriberName = "Subscriber" + i;
+                    newFixedThreadPool.submit(new Runnable() {
+                        public void run() {
+                            sub(subscriberName, jedisPool, numberOfChannels);
+                        }
+                    });
+                }
+            } else if (type.equalsIgnoreCase(AppType.PUBLISHER.name())) {
+                for (int i = 0; i < numberOfPublishers; i++) {
+                    ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
+                    final String publisherName = "Publisher" + i;
+                    newFixedThreadPool.submit(new Runnable() {
+                        public void run() {
+                            pub(publisherName, jedisPool, numberOfChannels, numberOfMessages);
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
 	}
 
 	private static Properties loadProperties(String pathToCfg) throws IOException {
@@ -89,7 +103,6 @@ public class Driver {
 	}
 
 	public static void sub(final String subscriberName, final JedisPool jedisPool, int numberOfChannels) {
-		final AtomicLong messagesReceived = new AtomicLong();
 		final ArrayList<String> channels = new ArrayList<String>();
 		for (Integer channel = 1; channel <= numberOfChannels; channel++) {
 			channels.add(channel.toString());
@@ -97,9 +110,13 @@ public class Driver {
 		System.out.println("Subscribing to " + channels.size() + " channels ");
 		Timer timer = new Timer();
 		timer.scheduleAtFixedRate(new TimerTask() {
+            long lastValue = 0;
 			public void run() {
 				Date date = new Date();
-				System.out.println(subscriberName + " received " + messagesReceived.get() + " messages at " + dateFormat.format(date));
+                if (Subscriber.getMessagesReceived().get() > lastValue) {
+                    lastValue = Subscriber.getMessagesReceived().get();
+                    System.out.println(subscriberName + " received " + lastValue +" messages at " + dateFormat.format(date));
+                }
 			}
 		}, 0, 1000);
 
@@ -112,7 +129,7 @@ public class Driver {
 				Jedis subscriberJedis = jedisPool.getResource();
 				maxChannel = maxChannel + (numberOfChannels / MAX_NUMBER_OF_SUBSCRIBER_THREADS);
 				List<String> channelsToSubscribe = channels.subList(minChannel, maxChannel);
-				Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, messagesReceived, channelsToSubscribe);
+				Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, channelsToSubscribe);
 				minChannel = maxChannel;
 				newFixedThreadPool.submit(runnable);
 			}
@@ -122,7 +139,7 @@ public class Driver {
 			Subscriber subscriber = new Subscriber(subscriberName, props);
 			Jedis subscriberJedis = jedisPool.getResource();
 			List<String> channelsToSubscribe = channels.subList(minChannel, channels.size());
-			Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, messagesReceived, channelsToSubscribe);
+			Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, channelsToSubscribe);
 			newFixedThreadPool.submit(runnable);
 		}
 	}
@@ -133,9 +150,13 @@ public class Driver {
 
 		Timer timer = new Timer();
 		timer.scheduleAtFixedRate(new TimerTask() {
-			public void run() {
+            long lastValue = 0;
+            public void run() {
 				Date date = new Date();
-				System.out.println(publisherName + " sent " + messagesSent.get() + " messages at " + dateFormat.format(date));
+                if (messagesSent.get() > lastValue) {
+                    lastValue = messagesSent.get();
+                    System.out.println(publisherName + " sent " + lastValue + " messages at " + dateFormat.format(date));
+                }
 			}
 		}, 0, 1000);
 

@@ -58,17 +58,19 @@ public class Driver {
             int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(Integer.MAX_VALUE);
+            poolConfig.setMaxTotal(500);
             poolConfig.setTestOnBorrow(true);
 
             final JedisPool jedisPool = new JedisPool(poolConfig, ADDRESS, 6379, 0, REDIS_KEY);
 
-            RedisBlobStore.init(ADDRESS, REDIS_KEY);
+//            RedisBlobStore.init(ADDRESS, REDIS_KEY);
+            RedisBlobStore.init2(jedisPool);
 
             System.out.println("-------------------------");
             System.out.println("Type: " + type);
             System.out.println("-------------------------");
             if (type.equalsIgnoreCase(AppType.SUBSCRIBER.name())) {
+                startSubscriberCounter();
                 for (int i = 0; i < numberOfSubscribers; i++) {
                     ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
                     final String subscriberName = "Subscriber" + i;
@@ -108,17 +110,6 @@ public class Driver {
 			channels.add(channel.toString());
 		}
 		System.out.println("Subscribing to " + channels.size() + " channels ");
-		Timer timer = new Timer();
-		timer.scheduleAtFixedRate(new TimerTask() {
-            long lastValue = 0;
-			public void run() {
-				Date date = new Date();
-                if (Subscriber.getMessagesReceived().get() > lastValue) {
-                    lastValue = Subscriber.getMessagesReceived().get();
-                    System.out.println(subscriberName + " received " + lastValue +" messages at " + dateFormat.format(date));
-                }
-			}
-		}, 0, 1000);
 
 		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(MAX_NUMBER_OF_SUBSCRIBER_THREADS + 1);
 		int maxChannel = 0;
@@ -158,7 +149,7 @@ public class Driver {
                     System.out.println(publisherName + " sent " + lastValue + " messages at " + dateFormat.format(date));
                 }
 			}
-		}, 0, 1000);
+		}, 0, 5000);
 
 		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(MAX_NUMBER_OF_PUBLISHER_THREADS + 1);
 		int maxChannel = 1;
@@ -179,4 +170,20 @@ public class Driver {
 			newFixedThreadPool.submit(runnable);
 		}
 	}
+
+
+    private static void startSubscriberCounter() {
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            long lastValue = 0;
+            public void run() {
+                Date date = new Date();
+                if (Subscriber.getMessagesReceived().get() > lastValue) {
+                    lastValue = Subscriber.getMessagesReceived().get();
+                    System.out.println(" received " + lastValue +" messages at " + dateFormat.format(date));
+                }
+            }
+        }, 0, 5000);
+    }
+
 }

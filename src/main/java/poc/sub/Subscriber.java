@@ -60,7 +60,7 @@ public class Subscriber extends JedisPubSub {
             try {
                 Thread.sleep(delay);
                 String msg = RedisBlobStore.get(messageId);
-                Objects.nonNull(msg);
+                Objects.requireNonNull(msg);
                 messagesReceived.incrementAndGet();
             } catch (InterruptedException e) {
                 Worker.log.error("InterruptedException " + e.getMessage());

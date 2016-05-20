@@ -1,5 +1,6 @@
 package poc.blob;
 
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
@@ -19,14 +20,21 @@ public class RedisBlobStore {
         jedisPool = new JedisPool(poolConfig, address, 6379, 0, key);
     }
 
+    public static void init2(JedisPool jedisPool) {
+        RedisBlobStore.jedisPool = jedisPool;
+    }
 
     public static void put(String key, String blob) {
-        jedisPool.getResource().setex(key, TTL, blob);
+        try (Jedis jedis = jedisPool.getResource()) {
+            jedis.setex(key, TTL, blob);
+        }
     }
 
 
     public static String get(String key) {
-        return jedisPool.getResource().get(key);
+        try (Jedis jedis = jedisPool.getResource()) {
+            return jedis.get(key);
+        }
     }
 
 }

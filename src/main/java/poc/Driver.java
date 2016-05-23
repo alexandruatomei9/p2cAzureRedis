@@ -34,7 +34,7 @@ public class Driver {
 	private static final String NUMBER_OF_MESSAGES = "driver.numberOfMessages";
 	private static final String NUMBER_OF_SUBSCRIBERS = "driver.numberOfSubscribers";
 	private static final String NUMBER_OF_PUBLISHERS = "driver.numberOfPublishers";
-	private static final String MAX_NUMBER_OF_PUBLISHER_THREADS = "diver.numberOfPublisherThreads";
+	private static final String MAX_NUMBER_OF_PUBLISHER_THREADS = "driver.numberOfPublisherThreads";
 	private static final String MAX_NUMBER_OF_SUBSCRIBER_THREADS = "driver.numberOfSubscriberThreads";
 
 	static DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
@@ -54,7 +54,9 @@ public class Driver {
             final int numberOfChannels = Integer.parseInt(props.getProperty(NUMBER_OF_CHANNELS));
             final int numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
             final int numberOfSubscribers = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBERS));
-            int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
+            final int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
+			final int maxNumberOfPublisherThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_PUBLISHER_THREADS));
+			final int maxNumberOfSubscriberThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_SUBSCRIBER_THREADS));
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
             poolConfig.setMaxTotal(500);
@@ -75,7 +77,7 @@ public class Driver {
                     final String subscriberName = "Subscriber" + i;
                     newFixedThreadPool.submit(new Runnable() {
                         public void run() {
-                            sub(subscriberName, jedisPool, numberOfChannels, numberOfSubscribers);
+                            sub(subscriberName, jedisPool, numberOfChannels, maxNumberOfSubscriberThreads);
                         }
                     });
                 }
@@ -85,7 +87,7 @@ public class Driver {
                     final String publisherName = "Publisher" + i;
                     newFixedThreadPool.submit(new Runnable() {
                         public void run() {
-                            pub(publisherName, jedisPool, numberOfChannels, numberOfMessages, numberOfChannels);
+                            pub(publisherName, jedisPool, numberOfChannels, numberOfMessages, maxNumberOfPublisherThreads);
                         }
                     });
                 }

@@ -1,4 +1,4 @@
-package poc;
+package poc.pub;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;

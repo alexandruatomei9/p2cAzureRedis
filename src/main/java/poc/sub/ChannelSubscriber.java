@@ -1,4 +1,4 @@
-package poc;
+package poc.sub;
 
 import redis.clients.jedis.Jedis;
 
@@ -10,10 +10,9 @@ public class ChannelSubscriber implements Runnable {
     private Subscriber subscriber;
     private List<String> channels;
 
-    public ChannelSubscriber(Jedis subscriberJedis, Subscriber subscriber, AtomicLong messagesReceived, List<String> channels) {
+    public ChannelSubscriber(Jedis subscriberJedis, Subscriber subscriber, List<String> channels) {
         this.subscriberJedis = subscriberJedis;
         this.subscriber = subscriber;
-        this.subscriber.setMessagesReceived(messagesReceived);
         this.channels = channels;
     }
 

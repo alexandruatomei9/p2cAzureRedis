@@ -56,3 +56,6 @@ local.properties
 
 .idea
 p2cAzureRedis.iml
+
+out/
+target/

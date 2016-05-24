@@ -11,6 +11,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.DateFormat;
@@ -99,9 +100,9 @@ public class Driver {
 	}
 
 	private static Properties loadProperties(String pathToCfg) throws IOException {
-		InputStream is = Driver.class.getClassLoader().getResourceAsStream(pathToCfg);
+		//InputStream is = Driver.class.getClassLoader().getResourceAsStream(pathToCfg);
 		Properties props = new Properties();
-		props.load(is);
+		props.load(new FileInputStream(pathToCfg));
 		return props;
 	}
 
@@ -117,7 +118,7 @@ public class Driver {
 		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfSubscriberThreads + 1);
 		int maxChannel = 0;
 		int minChannel = 0;
-		if (numberOfChannels > maxNumberOfSubscriberThreads) {
+		if (numberOfChannels >= maxNumberOfSubscriberThreads) {
 			for (int threadCount = 1; threadCount <= maxNumberOfSubscriberThreads; threadCount++) {
 				Subscriber subscriber = new Subscriber(subscriberName, props);
 				Jedis subscriberJedis = jedisPool.getResource();
@@ -154,23 +155,23 @@ public class Driver {
 			}
 		}, 0, 5000);
 
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfPublisherThreads + 1);
+		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfPublisherThreads);
 		int maxChannel = 1;
 		int minChannel = 1;
-		if (numberOfChannels > maxNumberOfPublisherThreads) {
+		if (numberOfChannels >= maxNumberOfPublisherThreads) {
 			for (int threadCount = 1; threadCount <= maxNumberOfPublisherThreads; threadCount++) {
 				maxChannel = maxChannel + (numberOfChannels / maxNumberOfPublisherThreads);
 				Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
 				Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, maxChannel);
 				minChannel = maxChannel;
-				newFixedThreadPool.submit(runnable);
+				newFixedThreadPool.execute(runnable);
 			}
 		}
 
 		if (numberOfChannels % maxNumberOfPublisherThreads != 0) {
 			Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
 			Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, numberOfChannels + 1);
-			newFixedThreadPool.submit(runnable);
+			newFixedThreadPool.execute(runnable);
 		}
 
 

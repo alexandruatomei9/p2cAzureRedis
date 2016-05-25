@@ -2,45 +2,45 @@ package poc;
 
 import lombok.extern.slf4j.Slf4j;
 import poc.blob.RedisBlobStore;
+import poc.pub.Message;
 import poc.pub.MessageGenerator;
-import poc.pub.MessagePublisher;
 import poc.pub.Publisher;
-import poc.sub.ChannelSubscriber;
 import poc.sub.Subscriber;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class Driver {
 
 	private static final String ADDRESS = "p2cprototype.redis.cache.windows.net";
 	private static final String REDIS_KEY = "xDipkV9siK4JDaLo08C8zjKZLg2QvQeDxEeiN0SAFUw=";
-	private static final String NUMBER_OF_CHANNELS = "driver.numberOfChannels";
-	private static final String NUMBER_OF_MESSAGES = "driver.numberOfMessages";
-	private static final String NUMBER_OF_SUBSCRIBERS = "driver.numberOfSubscribers";
-	private static final String NUMBER_OF_PUBLISHERS = "driver.numberOfPublishers";
-	private static final String MAX_NUMBER_OF_PUBLISHER_THREADS = "driver.numberOfPublisherThreads";
-	private static final String MAX_NUMBER_OF_SUBSCRIBER_THREADS = "driver.numberOfSubscriberThreads";
+
+    private static final String NUMBER_OF_PUBLISHER_CHANNELS = "driver.numberOfPublisherChannels";
+    private static final String NUMBER_OF_SUBSCRIBER_CHANNELS = "driver.numberOfSubscriberChannels";
+    private static final String NUMBER_OF_MESSAGES = "driver.numberOfMessages";
+    private static final String MAX_NUMBER_OF_PUBLISHER_THREADS = "driver.numberOfPublisherThreads";
+    private static final String MAX_NUMBER_OF_SUBSCRIBER_THREADS = "driver.numberOfSubscriberThreads";
 
 	static DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
 
 	private static Properties props;
+
 	public static void main(String[] args) throws IOException {
 
         try {
@@ -51,47 +51,31 @@ public class Driver {
             }
 
             props = loadProperties(pathToCfg);
-
-            final int numberOfChannels = Integer.parseInt(props.getProperty(NUMBER_OF_CHANNELS));
             final int numberOfMessages = Integer.parseInt(props.getProperty(NUMBER_OF_MESSAGES));
-            final int numberOfSubscribers = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBERS));
-            final int numberOfPublishers = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHERS));
-			final int maxNumberOfPublisherThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_PUBLISHER_THREADS));
-			final int maxNumberOfSubscriberThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_SUBSCRIBER_THREADS));
+
+            final int numberOfPublisherChannels = Integer.parseInt(props.getProperty(NUMBER_OF_PUBLISHER_CHANNELS));
+            final int maxNumberOfPublisherThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_PUBLISHER_THREADS));
+
+            final int numberOfSubscriberChannels = Integer.parseInt(props.getProperty(NUMBER_OF_SUBSCRIBER_CHANNELS));
+            final int maxNumberOfSubscriberThreads = Integer.parseInt(props.getProperty(MAX_NUMBER_OF_SUBSCRIBER_THREADS));
 
             JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(500);
+            poolConfig.setMaxTotal(1000);
             poolConfig.setTestOnBorrow(true);
 
             final JedisPool jedisPool = new JedisPool(poolConfig, ADDRESS, 6379, 0, REDIS_KEY);
 
-//            RedisBlobStore.init(ADDRESS, REDIS_KEY);
+
             RedisBlobStore.init2(jedisPool);
 
             System.out.println("-------------------------");
             System.out.println("Type: " + type);
             System.out.println("-------------------------");
             if (type.equalsIgnoreCase(AppType.SUBSCRIBER.name())) {
-                startSubscriberCounter();
-                for (int i = 0; i < numberOfSubscribers; i++) {
-                    ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
-                    final String subscriberName = "Subscriber" + i;
-                    newFixedThreadPool.submit(new Runnable() {
-                        public void run() {
-                            sub(subscriberName, jedisPool, numberOfChannels, maxNumberOfSubscriberThreads);
-                        }
-                    });
-                }
+                startSubscriberCounter(1000);
+                sub(jedisPool, numberOfSubscriberChannels, maxNumberOfSubscriberThreads);
             } else if (type.equalsIgnoreCase(AppType.PUBLISHER.name())) {
-                for (int i = 0; i < numberOfPublishers; i++) {
-                    ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(1);
-                    final String publisherName = "Publisher" + i;
-                    newFixedThreadPool.submit(new Runnable() {
-                        public void run() {
-                            pub(publisherName, jedisPool, numberOfChannels, numberOfMessages, maxNumberOfPublisherThreads);
-                        }
-                    });
-                }
+                pub(jedisPool, numberOfPublisherChannels, numberOfMessages, maxNumberOfPublisherThreads);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -99,111 +83,77 @@ public class Driver {
         }
 	}
 
-	private static Properties loadProperties(String pathToCfg) throws IOException {
-		//InputStream is = Driver.class.getClassLoader().getResourceAsStream(pathToCfg);
-		Properties props = new Properties();
-		props.load(new FileInputStream(pathToCfg));
-		return props;
-	}
+    public static void sub(final JedisPool jedisPool, int numberOfChannels, int maxNumberOfSubscriberThreads) {
+        System.out.println("Subscribing to " + numberOfChannels + " channels ");
+        final Map<Integer, List<String>> channels = getChannelsMapping(numberOfChannels, maxNumberOfSubscriberThreads);
+        //limited by the channels.size() = Math.min(numberOfChannels, maxNumberOfSubscriberThreads)
+        ExecutorService newFixedThreadPool = Executors.newCachedThreadPool();
+        for (final Integer subscriberId : channels.keySet()) {
+            //subscribe
+            newFixedThreadPool.execute(new Subscriber("Subscriber-" + subscriberId, jedisPool, channels.get(subscriberId), props));
+            //new Subscriber("Subscriber-"+subscriberId, jedisPool, channels.get(subscriberId), props).subscribe();
+        }
+    }
 
-
-	public static void sub(final String subscriberName, final JedisPool jedisPool, int numberOfChannels, int maxNumberOfSubscriberThreads) {
-		final AtomicLong messagesReceived = new AtomicLong();
-		final ArrayList<String> channels = new ArrayList<String>();
-		for (Integer channel = 1; channel <= numberOfChannels; channel++) {
-			channels.add(channel.toString());
-		}
-		System.out.println("Subscribing to " + channels.size() + " channels ");
-
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfSubscriberThreads + 1);
-		int maxChannel = 0;
-		int minChannel = 0;
-		if (numberOfChannels >= maxNumberOfSubscriberThreads) {
-			for (int threadCount = 1; threadCount <= maxNumberOfSubscriberThreads; threadCount++) {
-				Subscriber subscriber = new Subscriber(subscriberName, props);
-				Jedis subscriberJedis = jedisPool.getResource();
-				maxChannel = maxChannel + (numberOfChannels / maxNumberOfSubscriberThreads);
-				List<String> channelsToSubscribe = channels.subList(minChannel, maxChannel);
-				Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, channelsToSubscribe);
-				minChannel = maxChannel;
-				newFixedThreadPool.submit(runnable);
-			}
-		}
-
-		if (numberOfChannels % maxNumberOfSubscriberThreads != 0) {
-			Subscriber subscriber = new Subscriber(subscriberName, props);
-			Jedis subscriberJedis = jedisPool.getResource();
-			List<String> channelsToSubscribe = channels.subList(minChannel, channels.size());
-			Runnable runnable = new ChannelSubscriber(subscriberJedis, subscriber, channelsToSubscribe);
-			newFixedThreadPool.submit(runnable);
-		}
-	}
-
-	public static void pub(final String publisherName, JedisPool jedisPool, int numberOfChannels, int numberOfMessages, int maxNumberOfPublisherThreads) {
-		final List<String> messages = MessageGenerator.generateMessages(numberOfMessages);
-		final AtomicLong messagesSent = new AtomicLong();
-
-		Timer timer = new Timer();
-		timer.scheduleAtFixedRate(new TimerTask() {
-            long lastValue = 0;
-            public void run() {
-				Date date = new Date();
-                if (messagesSent.get() > lastValue) {
-                    lastValue = messagesSent.get();
-                    System.out.println(publisherName + " sent " + lastValue + " messages at " + dateFormat.format(date));
+    public static void pub(JedisPool jedisPool, int numberOfChannels, int numberOfMessages, int maxNumberOfPublisherThreads) {
+        final List<Message> messages = MessageGenerator.generateMessages(numberOfMessages, numberOfChannels);
+        ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfPublisherThreads);
+        final Publisher publisher = new Publisher(jedisPool, props);
+        Long duration = System.currentTimeMillis();
+        for (final Message m : messages) {
+            newFixedThreadPool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    publisher.publishMessage(m);
                 }
-			}
-		}, 0, 5000);
+            });
+        }
+        newFixedThreadPool.shutdown();
+        try {
+            newFixedThreadPool.awaitTermination(10, TimeUnit.MINUTES);
+            duration = System.currentTimeMillis() - duration;
+        } catch (InterruptedException e) {
+            //ignore
+        }
+        if (newFixedThreadPool.isTerminated()) {
+            System.out.printf("Publisher sent %d messages, in %d seconds, averaging a %d ms/message ", Publisher.getMessagesSent().get(), duration / 1000, duration / Publisher.getMessagesSent().get());
+        }
+    }
 
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(maxNumberOfPublisherThreads);
-		int maxChannel = 1;
-		int minChannel = 1;
-		if (numberOfChannels >= maxNumberOfPublisherThreads) {
-			for (int threadCount = 1; threadCount <= maxNumberOfPublisherThreads; threadCount++) {
-				maxChannel = maxChannel + (numberOfChannels / maxNumberOfPublisherThreads);
-				Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
-				Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, maxChannel);
-				minChannel = maxChannel;
-				newFixedThreadPool.execute(runnable);
-			}
-		}
+    private static Properties loadProperties(String pathToCfg) throws IOException {
+        Properties props = new Properties();
+        props.load(new FileInputStream(pathToCfg));
+        return props;
+    }
 
-		if (numberOfChannels % maxNumberOfPublisherThreads != 0) {
-			Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
-			Runnable runnable = new MessagePublisher(publisher, messages, messagesSent, minChannel, numberOfChannels + 1);
-			newFixedThreadPool.execute(runnable);
-		}
+    private static Map<Integer, List<String>> getChannelsMapping(int numberOfChannels, int maxNumberOfSubscriberThreads) {
+        int numberOfSubscribers = Math.min(numberOfChannels, maxNumberOfSubscriberThreads);
+        Map<Integer, List<String>> channels = new HashMap<>();
+        for (int i = 0; i < numberOfSubscribers; i++) {
+            channels.put(i, new LinkedList<String>());
+        }
+        for (Integer channel = 0; channel < numberOfChannels; ) {
+            for (int subscriber = 0; subscriber < numberOfSubscribers; subscriber++, channel++) {
+                channels.get(subscriber).add(channel.toString());
+            }
+        }
+        return channels;
+    }
 
-
-		/*final Publisher publisher = new Publisher(publisherName, jedisPool.getResource(), props);
-		final List<String> messages = MessageGenerator.generateMessages(numberOfMessages);
-		ExecutorService newFixedThreadPool = Executors.newFixedThreadPool(numberOfChannels * 2);
-		for (Integer channel = 1; channel < numberOfChannels; channel++) {
-			final String CHANNEL_NAME = channel.toString();
-			final List<String> messagesCpy = new ArrayList<String>(messages);
-			newFixedThreadPool.submit(new Runnable() {
-				public void run() {
-					for (String message : messagesCpy) {
-						publisher.publishMessage(message, CHANNEL_NAME, messagesSent);
-					}
-				}
-			});
-		}*/
-	}
-
-
-    private static void startSubscriberCounter() {
+    private static void startSubscriberCounter(int displayDelay) {
         Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
-            long lastValue = 0;
+            int numberOfTimesSameMessagehasBeenDisplayed = 4; // > 3
             public void run() {
-                Date date = new Date();
-                if (Subscriber.getMessagesReceived().get() > lastValue) {
-                    lastValue = Subscriber.getMessagesReceived().get();
-                    System.out.println(" received " + lastValue +" messages at " + dateFormat.format(date));
+                Long messagesReceived = Subscriber.getMessagesReceived().get();
+                Long messagesRead = Subscriber.getMessagesRead().get();
+                numberOfTimesSameMessagehasBeenDisplayed = !messagesRead.equals(messagesReceived) ? 0 : ++numberOfTimesSameMessagehasBeenDisplayed;
+                if (numberOfTimesSameMessagehasBeenDisplayed < 3) {
+                    System.out.printf(" received %d messages, and finished reading from store %d at %s\n",
+                            messagesReceived, Subscriber.getMessagesRead().get(), dateFormat.format(new Date()));
                 }
             }
-        }, 0, 5000);
+        }, 0, displayDelay);
     }
 
 }

@@ -12,6 +12,8 @@ public class RedisBlobStore {
 
     private static JedisPool jedisPool;
 
+    private static Jedis jedis;
+
     public static void init(String address, String key) {
         JedisPoolConfig poolConfig = new JedisPoolConfig();
         poolConfig.setMaxTotal(Integer.MAX_VALUE);
@@ -22,12 +24,14 @@ public class RedisBlobStore {
 
     public static void init2(JedisPool jedisPool) {
         RedisBlobStore.jedisPool = jedisPool;
+        jedis = jedisPool.getResource();
     }
 
     public static void put(String key, String blob) {
-        try (Jedis jedis = jedisPool.getResource()) {
-            jedis.setex(key, TTL, blob);
-        }
+//        try (Jedis jedis = jedisPool.getResource()) {
+//            jedis.setex(key, TTL, blob);
+//        }
+        jedis.setex(key, TTL, blob);
     }
 
 

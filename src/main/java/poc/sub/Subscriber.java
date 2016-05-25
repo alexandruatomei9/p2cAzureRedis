@@ -2,10 +2,12 @@ package poc.sub;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-
 import poc.blob.RedisBlobStore;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPubSub;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
@@ -13,40 +15,52 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
-public class Subscriber extends JedisPubSub {
+public class Subscriber extends JedisPubSub implements Runnable {
 
 	public static final String DELAY_PROPERTY = "subscriber.delay";
-
-    private Long delay;
-
-    ExecutorService executorService = Executors.newFixedThreadPool(1000);
-
     @Getter
     static AtomicLong messagesReceived = new AtomicLong();
-
+    @Getter
+    static AtomicLong messagesRead = new AtomicLong();
+    private Long delay;
     @Getter
 	private String name;
 
-	public Subscriber(String name, Properties props) {
-		this.name = name;
-        delay = Long.parseLong(props.getProperty(DELAY_PROPERTY));
-	}
+    private JedisPool jedisPool;
 
-	@Override
-	public void onMessage(String channel, String message) {
+    private List<String> channels;
 
-		try {
-			//log.info("Message received. Channel: {}, Msg: {}", channel, message);
-            executorService.submit(new Worker(delay, message));
-		} catch (Exception e) {
+    private ExecutorService workerExecutor = Executors.newFixedThreadPool(5);
+
+    public Subscriber(String name, JedisPool jedisPool, List<String> channels, Properties properties) {
+        this.name = name;
+        this.channels = channels;
+        this.jedisPool = jedisPool;
+        this.delay = Long.valueOf(properties.getProperty(DELAY_PROPERTY));
+    }
+
+    @Override
+    public void onMessage(String channel, String messageId) {
+        messagesReceived.incrementAndGet();
+        try {
+            workerExecutor.execute(new Worker(delay, messageId));
+        } catch (Exception e) {
             log.error(e.getMessage());
         }
 	}
 
+    @Override
+    public void run() {
+        Thread.currentThread().setName(getName());
+        try (Jedis subscriberJedis = jedisPool.getResource()) {
+            System.out.println(getName() + " subscribing to channels: " + channels);
+            subscriberJedis.subscribe(this, channels.toArray(new String[]{}));
+        }
+    }
+
     /**
      */
-    @Slf4j
-    public static class Worker implements Runnable {
+    private class Worker implements Runnable {
 
         private long delay;
         private String messageId;
@@ -58,12 +72,14 @@ public class Subscriber extends JedisPubSub {
 
         public void run() {
             try {
-                Thread.sleep(delay);
+                if (delay > 0) {
+                    Thread.sleep(delay);
+                }
                 String msg = RedisBlobStore.get(messageId);
                 Objects.requireNonNull(msg);
-                messagesReceived.incrementAndGet();
+                messagesRead.incrementAndGet();
             } catch (InterruptedException e) {
-                Worker.log.error("InterruptedException " + e.getMessage());
+                log.error("InterruptedException " + e.getMessage());
             }
         }
     }

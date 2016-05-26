@@ -48,9 +48,9 @@ public class Publisher {
 			//print
 			Long msgSent = messagesSent.incrementAndGet();
 			if (msgSent > 0 && msgSent % 500 == 0) {
-				System.out.println(" sent " + msgSent + " messages at " + dateFormat.format(new Date()));
-				System.out.println("store time: " + storeDuration);
-				System.out.println("publish time: \n" + pubDuration);
+				System.out.println("sent " + msgSent + " messages at " + dateFormat.format(new Date()));
+				System.out.printf("  store time: %d\n", storeDuration);
+				System.out.printf("  publish time: %d \n", pubDuration);
 			}
 		} finally {
 			if (publisherJedis != null) {

@@ -30,7 +30,7 @@ public class Subscriber extends JedisPubSub implements Runnable {
 
     private List<String> channels;
 
-    private ExecutorService workerExecutor = Executors.newFixedThreadPool(5);
+    private ExecutorService workerExecutor = Executors.newFixedThreadPool(10);
 
     public Subscriber(String name, JedisPool jedisPool, List<String> channels, Properties properties) {
         this.name = name;

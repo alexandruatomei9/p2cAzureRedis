@@ -13,6 +13,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -85,12 +86,16 @@ public class Driver {
 
     public static void sub(final JedisPool jedisPool, int numberOfChannels, int maxNumberOfSubscriberThreads) {
         System.out.println("Subscribing to " + numberOfChannels + " channels ");
-        final Map<Integer, List<String>> channels = getChannelsMapping(numberOfChannels, maxNumberOfSubscriberThreads);
+        //final Map<Integer, List<String>> channels = getChannelsMapping(numberOfChannels, maxNumberOfSubscriberThreads);
         //limited by the channels.size() = Math.min(numberOfChannels, maxNumberOfSubscriberThreads)
+        List<String> channels = new ArrayList<>();
+        for(Integer channel = 0; channel < numberOfChannels; channel++) {
+            channels.add(channel.toString());
+        }
         ExecutorService newFixedThreadPool = Executors.newCachedThreadPool();
-        for (final Integer subscriberId : channels.keySet()) {
+        for (Integer subscriberId = 0; subscriberId < maxNumberOfSubscriberThreads; subscriberId++) {
             //subscribe
-            newFixedThreadPool.execute(new Subscriber("Subscriber-" + subscriberId, jedisPool, channels.get(subscriberId), props));
+            newFixedThreadPool.execute(new Subscriber("Subscriber-" + subscriberId, jedisPool, channels, props));
             //new Subscriber("Subscriber-"+subscriberId, jedisPool, channels.get(subscriberId), props).subscribe();
         }
     }
